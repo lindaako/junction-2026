@@ -15,6 +15,9 @@ Usage (PowerShell, repo root):
   python scripts/stoa_graph.py --root "C:\\...\\junction-dataset" --from-results stoa_out/results_claude.jsonl
   # or N new plans from one half:
   python scripts/stoa_graph.py --root "..." --plans 30 --split test --conventions stoa_graph_out/conventions.json
+  # the reported configuration: Sonnet reads the layout, Fable reads the zoomed symbol crops
+  python scripts/stoa_graph.py --root "..." --plans 40 --split test --symbols \\
+      --model claude-sonnet-5-5 --symbol-model claude-fable-5-2 --conventions scripts/stoa_conventions.json
 Outputs in ./stoa_graph_out/: graphs/<plan>.json, overlays/<plan>.png, query_map.json,
 conventions.json, answers.jsonl, report.md. Re-running reuses cached graphs and queries.
 """
@@ -764,7 +767,9 @@ def main() -> None:
     ap.add_argument("--conventions", help="use this conventions.json instead of fitting (for the test half)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--provider", choices=["anthropic", "gemini"], default="anthropic")
-    ap.add_argument("--model")
+    ap.add_argument("--model", help="layout pass, question mapping and verification (default: the provider's default)")
+    ap.add_argument("--symbol-model", help="zoomed symbol pass (--symbols); default: same as --model. "
+                                           "The reported run: --model claude-sonnet-5-5 --symbol-model claude-fable-5-2")
     ap.add_argument("--min-side", type=int, default=1536)
     ap.add_argument("--max-side", type=int, default=2048)
     ap.add_argument("--timeout", type=int, default=180)
@@ -776,6 +781,7 @@ def main() -> None:
     ap.add_argument("--mock", action="store_true")
     args = ap.parse_args()
     args.model = args.model or vt.DEFAULT_MODELS[args.provider]
+    args.symbol_model = args.symbol_model or args.model
 
     here = Path(__file__).resolve().parent
     for folder in [here, *here.parents][:4] + [Path.cwd()]:
@@ -821,6 +827,8 @@ def main() -> None:
     (out / "graphs").mkdir(parents=True, exist_ok=True)
     usage = Usage()
     call = make_text_model(args.provider, args.model, args.timeout, usage, args.mock)
+    sym_call = (call if args.symbol_model == args.model
+                else make_text_model(args.provider, args.symbol_model, args.timeout, usage, args.mock))
     rules = ""
     if args.rules_file:
         rules = "\nExtra definitions:\n" + Path(args.rules_file).read_text(encoding="utf-8") + "\n"
@@ -828,6 +836,7 @@ def main() -> None:
 
     # 1. extract each plan once (cached, in parallel)
     graphs, imgs = {}, {}
+    other_model: Counter = Counter()
     t_start = time.time()
     todo = []
     for p in plans:
@@ -838,11 +847,16 @@ def main() -> None:
         imgs[p] = vt.prepare_image(img_path, args.min_side, False, args.max_side)
         gpath = out / "graphs" / (plan_key(p) + ".json")
         if gpath.is_file():
-            graphs[p] = json.loads(gpath.read_text(encoding="utf-8"))["graph"]
+            saved = json.loads(gpath.read_text(encoding="utf-8"))
+            graphs[p] = saved["graph"]
             mark_cabinets(graphs[p])
+            if saved.get("model") and saved["model"] != args.model:
+                other_model[saved["model"]] += 1
         else:
             todo.append(p)
     print(f"{len(graphs)} graphs cached, {len(todo)} to extract with {args.workers} workers.")
+    if other_model:   # the cache is keyed by plan, not by model: say so instead of silently mixing
+        print(f"  note: cached layout graphs from another model than {args.model}: {dict(other_model)}")
     stop = threading.Event()
 
     def extract(p):
@@ -891,6 +905,8 @@ def main() -> None:
             spath = out / "symbols" / f"{plan_key(p)}_t{args.tiles}.json"
             if spath.is_file():
                 d = json.loads(spath.read_text(encoding="utf-8"))
+                if d.get("model") and d["model"] != args.symbol_model:
+                    print(f"  note: cached symbols for {Path(p).name} are from {d['model']}, not {args.symbol_model}")
                 return p, d, None, True
             img_path = vt.resolve_image(root, p)
             orig = Image.open(img_path).convert("RGB")
@@ -904,7 +920,7 @@ def main() -> None:
                     crop = fit_image(orig.crop(t), args.min_side, args.max_side)
                     part = "the whole" if len(tiles) == 1 else f"crop {k + 1} of {len(tiles)} (overlapping)"
                     usage.local.last = (0, 0)
-                    data = vt.parse_json(call(SYMBOL_PROMPT.format(part=part), vt.to_png_bytes(crop)))
+                    data = vt.parse_json(sym_call(SYMBOL_PROMPT.format(part=part), vt.to_png_bytes(crop)))
                     tok = [tok[0] + usage.local.last[0], tok[1] + usage.local.last[1]]
                     part_items = tile_items_to_plan(data, t, W, H)
                     for c in merged:
@@ -914,7 +930,7 @@ def main() -> None:
                 return p, None, f"RATE LIMITED: {str(e)[:150]}", False
             except Exception as e:
                 return p, None, f"ERROR {type(e).__name__}: {str(e)[:200]}", False
-            d = {"path": p, "model": args.model, "tiles": args.tiles, "calls": len(tiles), "tokens": tok,
+            d = {"path": p, "model": args.symbol_model, "tiles": args.tiles, "calls": len(tiles), "tokens": tok,
                  "seconds": round(time.time() - t0, 1), "items": merged}
             spath.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
             if not args.mock:
@@ -1056,7 +1072,9 @@ def main() -> None:
               + ", ".join(failed[:5]))
 
     # 6. report
-    L = [f"# Stoa graph test: {len(graphs)} plans, {len(rows)} questions, model {args.model}\n"]
+    models = (f"model {args.model}" if not args.symbols or args.symbol_model == args.model
+              else f"layout model {args.model}, symbol model {args.symbol_model}")
+    L = [f"# Stoa graph test: {len(graphs)} plans, {len(rows)} questions, {models}\n"]
 
     def acc(rs, key="correct"):
         return f"{sum(r[key] for r in rs) / len(rs):.1%} ({sum(r[key] for r in rs)}/{len(rs)})" if rs else "-"
