@@ -8,7 +8,7 @@ numbered on the drawing, so a person can check the answer in seconds.
 
 **Live demo: http://70.34.222.185**
 
-![A floor plan with 19 doors circled and numbered, next to the list of counted doors](docs/screenshot.jpg)
+![A scanned floor plan with pen markings, its 7 doors circled and numbered, next to the list of counted doors](docs/screenshot.jpg)
 
 ## How it works
 
@@ -71,4 +71,4 @@ Code: MIT (`LICENSE`). Example plans: CubiCasa5K (Kalervo, Ylioinas, Häikiö, K
 https://zenodo.org/records/2613548), licensed CC BY-NC-SA 4.0
 (https://creativecommons.org/licenses/by-nc-sa/4.0/), as distributed in the Stoa Junction 2026
 challenge dataset, some with markings added there; see `examples/LICENSE.md`. The screenshot shows
-one of these plans. Vision models: Claude Sonnet 5.5 and Claude Fable 5.2 (Anthropic).
+another plan from the same source and license (`high_quality-1605`). Vision models: Claude Sonnet 5.5 and Claude Fable 5.2 (Anthropic).
