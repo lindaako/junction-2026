@@ -237,6 +237,24 @@ def check(pid: str, text: str) -> dict:
     return summary
 
 
+def seed_examples(folder: Path) -> int:
+    """copy bundled example plans (examples/plans/*.json + examples/img/*.jpg) into the data folder once"""
+    n = 0
+    for f in sorted((folder / "plans").glob("*.json")):
+        target = DATA / "plans" / f.name
+        if target.is_file():
+            continue
+        plan = json.loads(f.read_text(encoding="utf-8"))
+        img = folder / plan["img"]
+        if not img.is_file():
+            continue
+        (DATA / "img").mkdir(parents=True, exist_ok=True)
+        (DATA / plan["img"]).write_bytes(img.read_bytes())
+        target.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+        n += 1
+    return n
+
+
 def import_run(run: Path, root: Path, sfx: str, limit: int) -> None:
     """preload plans from a finished stoa_graph.py run (with their dataset questions and answers)"""
     rows = [json.loads(l) for l in (run / f"answers{sfx}.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
@@ -359,6 +377,11 @@ def main() -> None:
     CFG.update(layout_model=args.layout_model, symbol_model=args.symbol_model, timeout=args.timeout,
                mock=args.mock, conventions=conv, max_uploads=args.max_uploads)
     (DATA / "plans").mkdir(parents=True, exist_ok=True)
+    examples = HERE.parent / "examples"
+    if examples.is_dir():
+        n = seed_examples(examples)
+        if n:
+            print(f"added {n} bundled example plans from {examples}")
     if args.import_run:
         if not args.root:
             sys.exit("--import-run needs --root <dataset folder>")
