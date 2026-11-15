@@ -1,0 +1,46 @@
+{
+ "rooms": {
+  "statuses": [
+   "printed",
+   "hand_drawn"
+  ],
+  "cut_off": true
+ },
+ "doors": {
+  "statuses": [
+   "printed",
+   "hand_drawn"
+  ],
+  "cut_off": true,
+  "door_unit": "door",
+  "door_scope": "all",
+  "void": false,
+  "sources": [
+   "symbol"
+  ]
+ },
+ "windows": {
+  "statuses": [
+   "printed",
+   "hand_drawn"
+  ],
+  "cut_off": true,
+  "window_unit": "window",
+  "void": false,
+  "sources": [
+   "symbol"
+  ]
+ },
+ "fixtures": {
+  "statuses": [
+   "printed",
+   "hand_drawn"
+  ],
+  "cut_off": false,
+  "void": false,
+  "sources": [
+   "symbol"
+  ]
+ },
+ "floors": {}
+}
