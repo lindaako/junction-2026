@@ -101,6 +101,11 @@ def ingest(data: bytes, name: str) -> dict:
     existing = load_plan(pid)
     if existing:
         return existing
+    if CFG.get("max_uploads") is not None:   # protects the API budget on a public demo server
+        n = sum(1 for p in list_plans() if p["source"] == "upload")
+        if n >= CFG["max_uploads"]:
+            raise ValueError("This demo server has reached its upload limit. The example drawings still work, "
+                             "and the app can be run locally with your own API key.")
     usage = sg.Usage()
     lay_call = sg.make_text_model("anthropic", CFG["layout_model"], CFG["timeout"], usage, CFG["mock"])
     sym_call = sg.make_text_model("anthropic", CFG["symbol_model"], CFG["timeout"], usage, CFG["mock"])
@@ -321,6 +326,8 @@ class Handler(BaseHTTPRequestHandler):
             self.json({"error": "not found"}, 404)
         except KeyError:
             self.json({"error": "plan not found"}, 404)
+        except ValueError as e:  # a reason meant for the user (limit reached, unreadable file)
+            self.json({"error": str(e)[:300]}, 400)
         except Exception as e:  # show the reason in the page instead of a silent failure
             self.json({"error": f"{type(e).__name__}: {str(e)[:300]}"}, 500)
 
@@ -338,6 +345,7 @@ def main() -> None:
     ap.add_argument("--sfx", default="_v2t2")
     ap.add_argument("--limit", type=int, default=8)
     ap.add_argument("--mock", action="store_true", help="no API calls (pipeline test)")
+    ap.add_argument("--max-uploads", type=int, help="stop accepting new drawings after this many (public demo)")
     args = ap.parse_args()
     load_env()
     conv = {}
@@ -349,7 +357,7 @@ def main() -> None:
     else:
         print("counting conventions: defaults")
     CFG.update(layout_model=args.layout_model, symbol_model=args.symbol_model, timeout=args.timeout,
-               mock=args.mock, conventions=conv)
+               mock=args.mock, conventions=conv, max_uploads=args.max_uploads)
     (DATA / "plans").mkdir(parents=True, exist_ok=True)
     if args.import_run:
         if not args.root:
