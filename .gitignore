@@ -1,8 +1,24 @@
+# secrets
 .env
-*.db
+
+# dataset and archives
+data/
+*.zip
+
+# python
 __pycache__/
+*.pyc
 .venv/
+*.db
 node_modules/
 dist/
-data/
+
+# generated output and cached results
 outputs/
+stoa_out/
+stoa_out*/
+stoa_graph_out/
+stoa_graph_*/
+stoa_app_data/
+demo/
+demo_*/

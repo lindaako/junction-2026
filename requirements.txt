@@ -1,0 +1,6 @@
+anthropic
+pillow
+# optional: PDF uploads in the app
+pymupdf
+# optional: --provider gemini in stoa_vision_test.py / stoa_graph.py
+google-genai
